@@ -1,0 +1,14 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Settings (Personal/Machine-specific)
+**/settings.json
+
+# AI logs (Local/Personal records)
+実装担当Gemini作業ログ/
+インストールへの道.txt
+
+# Backups / Copied files
+*コピー.py

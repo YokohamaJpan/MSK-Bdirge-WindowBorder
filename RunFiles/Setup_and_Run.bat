@@ -8,7 +8,7 @@ echo It may take a minute for the first run. Please wait.
 echo.
 
 python -m pip install --upgrade pip
-pip install PySide6 pywin32
+pip install PySide6 pywin32 psutil
 
 if %errorlevel% neq 0 (
     echo.

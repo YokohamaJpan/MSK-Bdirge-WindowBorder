@@ -39,15 +39,29 @@ def enum_windows(exclude_hwnd=None):
         if title == "":
             return
 
+        # ウィンドウスタイルの取得
+        style = win32gui.GetWindowLong(hwnd, win32con.GWL_STYLE)
+        exstyle = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+
+        # 子ウィンドウは除外
+        if style & win32con.WS_CHILD:
+            return
+
+        # ツールウィンドウは除外
+        if exstyle & win32con.WS_EX_TOOLWINDOW:
+            return
+
         # デスクトップの背景やタスクバーなどのシステムウィンドウ、および透明なオーバーレイを除外
         class_name = win32gui.GetClassName(hwnd)
         if class_name in [
             "Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd",
-            "MousePointerCrosshairs", "CEF-OSC-WIDGET"
+            "MousePointerCrosshairs", "CEF-OSC-WIDGET",
+            "SHELLDLL_DefView", "SysListView32",
+            "DesktopWindowXamlSource", "Windows.UI.Core.CoreWindow"
         ]:
             return
 
-        # DWMによってクローク（非表示・別デスクトップ・UWPの非活性状態）されている窓を除外
+        # DWMによってクロークされている窓を除外
         cloaked = ctypes.c_int(0)
         hr = dwmapi.DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, ctypes.byref(cloaked), ctypes.sizeof(cloaked))
         if hr == 0 and cloaked.value != 0:
@@ -60,7 +74,8 @@ def enum_windows(exclude_hwnd=None):
         if right - left < 50 or bottom - top < 50:
             return
 
-        windows.append((left, top, right, bottom))
+        # HWNDも格納して返す
+        windows.append((hwnd, left, top, right, bottom))
 
     win32gui.EnumWindows(callback, None)
     return windows
@@ -70,9 +85,8 @@ class SettingsDialog(QDialog):
 
     def __init__(self, parent):
         super().__init__(parent)
-        self.overlay = parent
+        self.overlay = parent  # 管理クラス (Overlay)
         self.setWindowTitle("設定")
-        # 設定画面も常に最前面にして埋もれないようにする
         self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.Dialog)
 
         # キャンセル時の復元用に現在の値を保持
@@ -134,7 +148,6 @@ class SettingsDialog(QDialog):
         self.setLayout(layout)
 
     def update_color_button_preview(self, color):
-        # ボタンの背景色を選択された色でプレビュー表示する
         self.color_btn.setStyleSheet(
             f"background-color: rgb({color.red()}, {color.green()}, {color.blue()}); "
             f"color: {'black' if color.lightness() > 128 else 'white'}; "
@@ -142,26 +155,23 @@ class SettingsDialog(QDialog):
         )
 
     def choose_color(self):
-        # カラーピッカーを開く
         color = QColorDialog.getColor(self.overlay.line_color, self, "枠線の色を選択")
         if color.isValid():
             self.overlay.line_color = color
             self.update_color_button_preview(color)
-            self.overlay.update()  # リアルタイム反映
+            self.overlay.update_all_overlays_style()
 
     def on_width_changed(self, value):
         self.width_val_label.setText(f"{value} px")
         self.overlay.line_width = value
-        self.overlay.update()  # リアルタイム反映
+        self.overlay.update_all_overlays_style()
 
     def on_alpha_changed(self, value):
         self.alpha_val_label.setText(f"{value} %")
         self.overlay.line_alpha_pct = value
-        self.overlay.line_alpha = int(value * 2.55)  # 0-100% から 0-255 へ変換
-        self.overlay.update()  # リアルタイム反映
+        self.overlay.update_all_overlays_style()
 
     def save_settings(self):
-        # 設定をJSONに保存
         settings = {
             "line_color": [self.overlay.line_color.red(), self.overlay.line_color.green(), self.overlay.line_color.blue()],
             "line_width": self.overlay.line_width,
@@ -175,54 +185,111 @@ class SettingsDialog(QDialog):
         self.accept()
 
     def cancel_settings(self):
-        # 設定を元の状態にロールバック
         self.overlay.line_color = self.orig_color
         self.overlay.line_width = self.orig_width
         self.overlay.line_alpha_pct = self.orig_alpha_pct
-        self.overlay.line_alpha = int(self.orig_alpha_pct * 2.55)
-        self.overlay.update()
+        self.overlay.update_all_overlays_style()
         self.reject()
 
 
+class WindowOverlay(QWidget):
+    """個々の通常ウィンドウに追従する枠線のみのオーバーレイ"""
+
+    def __init__(self, target_hwnd, manager):
+        super().__init__()
+        self.target_hwnd = target_hwnd
+        self.manager = manager
+
+        # 枠なし、ツールウィンドウ、入力透過、フォーカス拒否を設定
+        self.setWindowFlags(
+            Qt.FramelessWindowHint
+            | Qt.Tool
+            | Qt.WindowTransparentForInput
+            | Qt.WindowDoesNotAcceptFocus
+        )
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+
+        self.my_hwnd = int(self.winId())
+        self.sync_position()
+
+    def sync_position(self):
+        try:
+            # ターゲット位置とサイズを取得
+            l, t, r, b = win32gui.GetWindowRect(self.target_hwnd)
+            w = r - l
+            h = b - t
+
+            # 枠線幅をそのまま余白にする
+            offset = self.manager.line_width
+            ox = l - offset
+            oy = t - offset
+            ow = w + offset * 2
+            oh = h + offset * 2
+
+            self.setGeometry(ox, oy, ow, oh)
+
+            # マスク処理：アプリ領域（offset以降）を透過
+            outer = QRegion(0, 0, ow, oh)
+            inner = QRegion(offset, offset, w, h)
+            mask = outer.subtracted(inner)
+            self.setMask(mask)
+
+            # Zオーダーの物理同期 (対象ウィンドウの直上、アクティブ化しない)
+            win32gui.SetWindowPos(
+                self.my_hwnd,
+                self.target_hwnd,
+                ox, oy, ow, oh,
+                win32con.SWP_NOACTIVATE | win32con.SWP_SHOWWINDOW
+            )
+        except Exception:
+            pass
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        color = self.manager.line_color
+        alpha = self.manager.line_alpha
+        width = self.manager.line_width
+
+        pen = QPen(QColor(color.red(), color.green(), color.blue(), alpha))
+        pen.setWidth(width)
+        painter.setPen(pen)
+        painter.setBrush(Qt.NoBrush)
+
+        half_w = width / 2.0
+        painter.drawRect(half_w, half_w, self.width() - width, self.height() - width)
+
+
 class Overlay(QWidget):
+    """トレイメニューと全オーバーレイを管理する隠し管理者クラス"""
 
     def __init__(self):
         super().__init__()
 
-        # デフォルト設定値
-        self.line_color = QColor(255, 255, 0)  # 黄色
+        # デフォルト設定
+        self.line_color = QColor(255, 255, 0)
         self.line_width = 10
         self.line_alpha_pct = 80
         self.line_alpha = int(self.line_alpha_pct * 2.55)
-        self.update_interval_ms = 33
+        self.update_interval_ms = 100  # 100ms周期
 
-        # 設定ファイルのロード
         self.load_settings()
 
-        # 最前面表示、枠なし、ツールウィンドウ属性を設定
-        self.setWindowFlags(
-            Qt.WindowStaysOnTopHint
-            | Qt.FramelessWindowHint
-            | Qt.Tool
-        )
-
-        # 背景を透明化し、マウスイベントを透過させる
+        # 管理クラス自身は非表示のQObjectのように振る舞わせるため、画面外の最小サイズにする
+        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.setGeometry(0, 0, 1, 1)
 
-        # 画面全体のサイズを取得して設定
-        screen = QApplication.primaryScreen().geometry()
-        self.setGeometry(screen)
-
-        self.windows = []
-
-        # 自身のウィンドウハンドル (HWND) を取得し、除外用に保持
         self.my_hwnd = int(self.winId())
+        self.overlays = {}  # target_hwnd -> WindowOverlay オブジェクト
 
-        # システムトレイアイコンのセットアップ
+        # システムトレイのセットアップ
         self.setup_tray_icon()
 
-        # 定期更新タイマーの開始
+        # 100msごとに同期を行う一括タイマー
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_windows)
         self.timer.start(self.update_interval_ms)
@@ -242,84 +309,66 @@ class Overlay(QWidget):
 
     def setup_tray_icon(self):
         self.tray_icon = QSystemTrayIcon(self)
-        
-        # 枠線色と同じ色の16x16ピクセルの正方形アイコンを動的生成
+
         pixmap = QPixmap(16, 16)
         pixmap.fill(self.line_color)
         self.tray_icon.setIcon(QIcon(pixmap))
-        self.tray_icon.setToolTip("Window枠強調ツール")
+        self.tray_icon.setToolTip("Window枠拡張ツール")
 
-        # 右クリックメニューの作成
         tray_menu = QMenu()
-        
-        # 設定アクションの追加
         settings_action = tray_menu.addAction("設定...")
         settings_action.triggered.connect(self.show_settings)
-        
+
         tray_menu.addSeparator()
-        
-        # 終了アクション
+
         exit_action = tray_menu.addAction("終了")
         exit_action.triggered.connect(QApplication.quit)
-        
+
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
 
     def show_settings(self):
-        # 設定ダイアログを表示
         dialog = SettingsDialog(self)
         if dialog.exec() == QDialog.Accepted:
-            # 保存されて設定が変わった場合、トレイアイコンの色も同期更新する
             pixmap = QPixmap(16, 16)
             pixmap.fill(self.line_color)
             self.tray_icon.setIcon(QIcon(pixmap))
 
-    def keyPressEvent(self, event):
-        # 念のためEscキーが押された際も終了するように設定
-        if event.key() == Qt.Key_Escape:
-            QApplication.quit()
+    def update_all_overlays_style(self):
+        self.line_alpha = int(self.line_alpha_pct * 2.55)
+        # 全個別オーバーレイの描画スタイルを同期更新
+        for w_overlay in self.overlays.values():
+            w_overlay.update()
 
     def update_windows(self):
-        self.windows = enum_windows(exclude_hwnd=self.my_hwnd)
-        self.update()
+        # 現在のアクティブな通常ウィンドウをスキャン
+        current_windows = enum_windows(exclude_hwnd=self.my_hwnd)
+        current_hwnds = {w[0] for w in current_windows}
 
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        # 1. 消失したウィンドウのオーバーレイを破棄
+        for hwnd in list(self.overlays.keys()):
+            if hwnd not in current_hwnds:
+                self.overlays[hwnd].close()
+                self.overlays[hwnd].deleteLater()
+                del self.overlays[hwnd]
 
-        # 読み込まれている設定に基づいてペンを作成
-        pen = QPen(QColor(self.line_color.red(), self.line_color.green(), self.line_color.blue(), self.line_alpha))
-        pen.setWidth(self.line_width)
-        painter.setPen(pen)
-        painter.setBrush(Qt.NoBrush)
+        # 2. 新規ウィンドウの生成 ＆ 既存の追従同期
+        for hwnd, l, t, r, b in current_windows:
+            # 最小化中の場合は非表示にする
+            if win32gui.IsIconic(hwnd):
+                if hwnd in self.overlays:
+                    self.overlays[hwnd].hide()
+                continue
 
-        covered_region = QRegion()
+            if hwnd not in self.overlays:
+                self.overlays[hwnd] = WindowOverlay(hwnd, self)
 
-        overlay_rect = self.geometry()
-        ox, oy = overlay_rect.x(), overlay_rect.y()
-
-        for l, t, r, b in self.windows:
-            local_l = l - ox
-            local_t = t - oy
-            local_w = r - l
-            local_h = b - t
-            local_rect = QRect(local_l, local_t, local_w, local_h)
-
-            expanded_rect = local_rect.adjusted(-self.line_width, -self.line_width, self.line_width, self.line_width)
-            window_region = QRegion(expanded_rect)
-
-            visible_region = window_region.subtracted(covered_region)
-
-            painter.save()
-            painter.setClipRegion(visible_region)
-            painter.drawRect(local_rect)
-            painter.restore()
-
-            covered_region = covered_region.united(QRegion(local_rect))
+            self.overlays[hwnd].sync_position()
+            self.overlays[hwnd].show()
 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     overlay = Overlay()
-    overlay.showFullScreen()
+    overlay.show()
     sys.exit(app.exec())

@@ -4,7 +4,7 @@ import time
 import subprocess
 import random
 import psutil
-from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar
+from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar, QMessageBox
 from PySide6.QtGui import QFont, QColor
 from PySide6.QtCore import Qt, QTimer
 
@@ -54,7 +54,7 @@ class BenchmarkWindow(QWidget):
         self.test_duration = 10  # テスト時間 (秒)
 
         self.setWindowTitle("動作ベンチマークテスト")
-        self.resize(550, 400)
+        self.resize(550, 900)
         self.setWindowFlags(Qt.WindowStaysOnTopHint)  # 最前面表示で埋もれないようにする
 
         # クールなダークテーマUI
@@ -104,15 +104,17 @@ class BenchmarkWindow(QWidget):
         self.layout.setSpacing(20)
 
         # タイトル
-        title_label = QLabel("Window枠強調ツール - 動作ベンチマーク")
-        title_label.setFont(QFont("Segoe UI", 18, QFont.Bold))
+        title_label = QLabel("WindowBorderTool - 動作ベンチマーク\nWindowBorderTool - Performance Benchmark")
+        title_label.setFont(QFont("Segoe UI", 16, QFont.Bold))
         title_label.setStyleSheet("color: #00bcd4;")
         title_label.setAlignment(Qt.AlignCenter)
+        title_label.setWordWrap(True)
         self.layout.addWidget(title_label)
 
         # 進捗状況説明
-        self.status_label = QLabel("PCの性能測定と描画負荷の耐久テストを実行中...")
+        self.status_label = QLabel("PCの性能測定と描画負荷の耐久テストを実行中...\nRunning hardware performance measurement and draw load stress test...")
         self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setWordWrap(True)
         self.layout.addWidget(self.status_label)
 
         # プログレスバー
@@ -123,8 +125,10 @@ class BenchmarkWindow(QWidget):
 
         # リアルタイム統計
         self.info_layout = QVBoxLayout()
-        self.cpu_label = QLabel("現在のCPU負荷: 測定中...")
-        self.mem_label = QLabel("現在のメモリ使用量: 測定中...")
+        self.cpu_label = QLabel("現在のCPU負荷 (Current CPU Load): 測定中 (Measuring)...")
+        self.mem_label = QLabel("現在のメモリ使用量 (Current Memory Usage): 測定中 (Measuring)...")
+        self.cpu_label.setWordWrap(True)
+        self.mem_label.setWordWrap(True)
         self.info_layout.addWidget(self.cpu_label)
         self.info_layout.addWidget(self.mem_label)
         self.layout.addLayout(self.info_layout)
@@ -143,8 +147,8 @@ class BenchmarkWindow(QWidget):
             self.mem_usages.append(mem)
 
             # 表示更新
-            self.cpu_label.setText(f"現在のCPU負荷: {cpu:.1f} %")
-            self.mem_label.setText(f"現在のメモリ使用量: {mem:.1f} MB")
+            self.cpu_label.setText(f"現在のCPU負荷: {cpu:.1f} %\n(Current CPU Load: {cpu:.1f} %)")
+            self.mem_label.setText(f"現在のメモリ使用量: {mem:.1f} MB\n(Current Memory Usage: {mem:.1f} MB)")
         except Exception:
             pass
 
@@ -178,21 +182,21 @@ class BenchmarkWindow(QWidget):
         
         # 判定とアドバイスの決定
         if score >= 90:
-            rank = "S ランク [極めて快適]"
+            rank = "S ランク [極めて快適]\nS Rank [Extremely Comfortable]"
             rank_color = "#4caf50"  # 緑
-            advice = "このPCなら、他の重い作業を同時に行っても、枠線は完全に滑らかに動作します。実用上全く問題ありません。"
+            advice = "このPCなら、他の重い作業を同時に行っても、枠線は完全に滑らかに動作します。実用上全く問題ありません。\n(On this PC, the borders will run completely smoothly even if other heavy tasks are performed simultaneously. There are no practical issues.)"
         elif score >= 80:
-            rank = "A ランク [快適]"
+            rank = "A ランク [快適]\nA Rank [Comfortable]"
             rank_color = "#00bcd4"  # 水色
-            advice = "通常業務において、十分な応答性と滑らかな描画を維持できます。安心してご利用ください。"
+            advice = "通常業務において、十分な応答性と滑らかな描画を維持できます。安心してご利用ください。\n(It can maintain sufficient responsiveness and smooth rendering in normal business operations. Please use it with confidence.)"
         elif score >= 70:
-            rank = "B ランク [普通]"
+            rank = "B ランク [普通]\nB Rank [Normal]"
             rank_color = "#ffeb3b"  # 黄色
-            advice = "実用可能です。もし動作にやや引っかかりを感じる場合は、設定画面から「線の太さ」を少し細くすると改善します。"
+            advice = "実用可能です。もし動作にやや引っかかりを感じる場合は、設定画面から「線の太さ」を少し細くすると改善します。\n(It is practical for use. If you feel any slight stuttering, it can be improved by slightly reducing the 'Border Width' in the settings dialog.)"
         else:
-            rank = "C ランク [要調整]"
+            rank = "C ランク [要調整]\nC Rank [Adjustment Needed]"
             rank_color = "#f44336"  # 赤
-            advice = "PCの描画処理にやや負荷がかかっています。設定画面で「線の太さ」を細くするか、「不透明度」を下げてご使用ください。"
+            advice = "PCの描画処理にやや負荷がかかっています。設定画面で「線の太さ」を細くするか、「不透明度」を下げてご使用ください。\n(There is a slight load on the PC's drawing process. Please use it by narrowing the 'Border Width' or lowering the 'Opacity' in the settings dialog.)"
 
         # レイアウトをクリアして結果画面を再構築
         # 古いウィジェットの削除
@@ -202,29 +206,31 @@ class BenchmarkWindow(QWidget):
                 child.widget().deleteLater()
 
         # 結果UIの組み立て
-        self.layout.setContentsMargins(40, 30, 40, 30)
-        self.layout.setSpacing(15)
+        self.layout.setContentsMargins(30, 20, 30, 20)
+        self.layout.setSpacing(10)
 
         # タイトル
-        res_title = QLabel("ベンチマークテスト結果")
-        res_title.setFont(QFont("Segoe UI", 20, QFont.Bold))
+        res_title = QLabel("ベンチマークテスト結果\nBenchmark Test Results")
+        res_title.setFont(QFont("Segoe UI", 18, QFont.Bold))
         res_title.setStyleSheet("color: #00bcd4;")
         res_title.setAlignment(Qt.AlignCenter)
+        res_title.setWordWrap(True)
         self.layout.addWidget(res_title)
 
         # スコアとランク
         score_layout = QHBoxLayout()
         score_layout.setAlignment(Qt.AlignCenter)
         
-        score_label = QLabel(f"スコア: {score}点")
-        score_label.setFont(QFont("Segoe UI", 28, QFont.Bold))
+        score_label = QLabel(f"スコア: {score}点 (Score: {score})")
+        score_label.setFont(QFont("Segoe UI", 24, QFont.Bold))
         score_layout.addWidget(score_label)
         self.layout.addLayout(score_layout)
 
         rank_label = QLabel(rank)
-        rank_label.setFont(QFont("Segoe UI", 18, QFont.Bold))
+        rank_label.setFont(QFont("Segoe UI", 15, QFont.Bold))
         rank_label.setStyleSheet(f"color: {rank_color};")
         rank_label.setAlignment(Qt.AlignCenter)
+        rank_label.setWordWrap(True)
         self.layout.addWidget(rank_label)
 
         # 境界線
@@ -235,38 +241,50 @@ class BenchmarkWindow(QWidget):
 
         # 統計詳細
         stats_layout = QVBoxLayout()
-        stats_layout.addWidget(QLabel(f"・ 平均CPU負荷: {avg_cpu:.1f} %"))
-        stats_layout.addWidget(QLabel(f"・ 平均メモリ使用量: {avg_mem:.1f} MB"))
-        stats_layout.addWidget(QLabel(f"・ テスト負荷: ウィンドウ50個の重ね合わせと高速描画"))
+        stats_layout.addWidget(QLabel(f"・ 平均CPU負荷 (Average CPU Load): {avg_cpu:.1f} %"))
+        stats_layout.addWidget(QLabel(f"・ 平均メモリ使用量 (Average Memory Usage): {avg_mem:.1f} MB"))
+        
+        load_lbl = QLabel(
+            "・ テスト負荷: ウィンドウ50個の重ね合わせと高速描画\n"
+            "  (Test Load: 50 overlapping windows moving at high speed)"
+        )
+        load_lbl.setWordWrap(True)
+        stats_layout.addWidget(load_lbl)
         self.layout.addLayout(stats_layout)
 
         # アドバイス
-        adv_title = QLabel("■ 動作アドバイス:")
+        adv_title = QLabel("■ 動作アドバイス (Operation Advice):")
         adv_title.setFont(QFont("Segoe UI", 12, QFont.Bold))
         self.layout.addWidget(adv_title)
         
         adv_text = QLabel(advice)
         adv_text.setWordWrap(True)
-        adv_text.setStyleSheet("color: #b0b0b0; font-size: 14px;")
+        adv_text.setStyleSheet("color: #b0b0b0; font-size: 13px;")
         self.layout.addWidget(adv_text)
 
         # 技術的注意書きの追加
-        note_title = QLabel("※ ベンチマークに関する注意点:")
+        note_title = QLabel("※ ベンチマークに関する注意点 (Notes on Benchmark):")
         note_title.setFont(QFont("Segoe UI", 10, QFont.Bold))
         note_title.setStyleSheet("color: #888; margin-top: 5px;")
         self.layout.addWidget(note_title)
         
         note_text = QLabel(
             "・主にCPUの2D描画処理能力で測定しています（GPUの3D性能は測定対象外です）\n"
-            "・表示画面解像度の影響を大きく受けます（4Kなどの高解像度表示では得点が下がります）"
+            "  (Mainly measures the CPU's 2D rendering capability; GPU 3D performance is not measured)\n"
+            "・表示画面解像度の影響を大きく受けます（4Kなどの高解像度表示では得点が下がります）\n"
+            "  (Highly affected by display resolution; scores will decrease in high resolutions like 4K)"
         )
+        note_text.setWordWrap(True)
         note_text.setStyleSheet("color: #777; font-size: 11px;")
         self.layout.addWidget(note_text)
 
         # 閉じるボタン
-        close_btn = QPushButton("ベンチマークを閉じる")
+        close_btn = QPushButton("ベンチマークを閉じる (Close Benchmark)")
         close_btn.clicked.connect(self.close)
         self.layout.addWidget(close_btn, alignment=Qt.AlignCenter)
+
+        # UI要素を完全に表示するためにウィンドウサイズを更新
+        self.resize(550, 900)
 
 
 def main():
@@ -294,6 +312,15 @@ def main():
     # 2. ダミーウィンドウの大量生成
     # ベンチマーク画面を描画するために QApplication を作成
     app = QApplication(sys.argv)
+
+    # 起動確認ダイアログの表示 (QMessageBox)
+    msg_box = QMessageBox()
+    msg_box.setIcon(QMessageBox.Question)
+    msg_box.setWindowTitle("Confirmation")
+    msg_box.setText("「WindowBorderTool」を終了していますか？\nHas \"WindowBorderTool\" been closed?")
+    msg_box.setStandardButtons(QMessageBox.Ok)
+    msg_box.setDefaultButton(QMessageBox.Ok)
+    msg_box.exec()
 
     dummy_windows = []
     # 50個のウィンドウを生成してばら撒く

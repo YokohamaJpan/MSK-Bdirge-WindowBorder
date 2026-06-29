@@ -17,6 +17,13 @@ DWMWA_CLOAKED = 14
 
 SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
 
+DEBUG = "--debug" in sys.argv or "debug" in sys.argv
+
+
+def debug_log(message):
+    if DEBUG:
+        print(f"[DEBUG] {message}")
+
 
 def enum_windows(exclude_hwnd=None):
     windows = []
@@ -86,7 +93,7 @@ class SettingsDialog(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.overlay = parent  # 管理クラス (Overlay)
-        self.setWindowTitle("設定")
+        self.setWindowTitle("設定 (Config)")
         self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.Dialog)
 
         # キャンセル時の復元用に現在の値を保持
@@ -99,19 +106,19 @@ class SettingsDialog(QDialog):
     def setup_ui(self):
         layout = QVBoxLayout()
 
-        # --- 色の選択 ---
+        # --- Color Selection ---
         color_layout = QHBoxLayout()
-        color_label = QLabel("枠線の色:")
-        self.color_btn = QPushButton("色を選択...")
+        color_label = QLabel("Border Color:")
+        self.color_btn = QPushButton("Select Color...")
         self.update_color_button_preview(self.overlay.line_color)
         self.color_btn.clicked.connect(self.choose_color)
         color_layout.addWidget(color_label)
         color_layout.addWidget(self.color_btn)
         layout.addLayout(color_layout)
 
-        # --- 太さ調整 (1 - 40 px) ---
+        # --- Width Adjustment (1 - 40 px) ---
         width_layout = QHBoxLayout()
-        width_label = QLabel("線の太さ (1-40 px):")
+        width_label = QLabel("Border Width (1-40 px):")
         self.width_slider = QSlider(Qt.Horizontal)
         self.width_slider.setRange(1, 40)
         self.width_slider.setValue(self.overlay.line_width)
@@ -122,9 +129,9 @@ class SettingsDialog(QDialog):
         width_layout.addWidget(self.width_val_label)
         layout.addLayout(width_layout)
 
-        # --- 透明度調整 (0 - 100 %) ---
+        # --- Opacity Adjustment (0 - 100 %) ---
         alpha_layout = QHBoxLayout()
-        alpha_label = QLabel("不透明度 (0-100 %):")
+        alpha_label = QLabel("Opacity (0-100 %):")
         self.alpha_slider = QSlider(Qt.Horizontal)
         self.alpha_slider.setRange(0, 100)
         self.alpha_slider.setValue(self.overlay.line_alpha_pct)
@@ -135,11 +142,11 @@ class SettingsDialog(QDialog):
         alpha_layout.addWidget(self.alpha_val_label)
         layout.addLayout(alpha_layout)
 
-        # --- 保存・キャンセルボタン ---
+        # --- Save & Cancel Buttons ---
         btn_layout = QHBoxLayout()
-        save_btn = QPushButton("保存")
+        save_btn = QPushButton("Save")
         save_btn.clicked.connect(self.save_settings)
-        cancel_btn = QPushButton("キャンセル")
+        cancel_btn = QPushButton("Cancel")
         cancel_btn.clicked.connect(self.cancel_settings)
         btn_layout.addWidget(save_btn)
         btn_layout.addWidget(cancel_btn)
@@ -155,7 +162,7 @@ class SettingsDialog(QDialog):
         )
 
     def choose_color(self):
-        color = QColorDialog.getColor(self.overlay.line_color, self, "枠線の色を選択")
+        color = QColorDialog.getColor(self.overlay.line_color, self, "Select Border Color")
         if color.isValid():
             self.overlay.line_color = color
             self.update_color_button_preview(color)
@@ -181,7 +188,7 @@ class SettingsDialog(QDialog):
             with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
                 json.dump(settings, f, indent=4)
         except Exception as e:
-            print(f"Error saving settings: {e}")
+            debug_log(f"Error saving settings: {e}")
         self.accept()
 
     def cancel_settings(self):
@@ -243,8 +250,8 @@ class WindowOverlay(QWidget):
                 ox, oy, ow, oh,
                 win32con.SWP_NOACTIVATE | win32con.SWP_SHOWWINDOW
             )
-        except Exception:
-            pass
+        except Exception as e:
+            debug_log(f"Sync error: {e}")
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -305,7 +312,7 @@ class Overlay(QWidget):
                     self.line_alpha_pct = max(0, min(100, settings.get("line_alpha_pct", 80)))
                     self.line_alpha = int(self.line_alpha_pct * 2.55)
             except Exception as e:
-                print(f"Error loading settings: {e}")
+                debug_log(f"Error loading settings: {e}")
 
     def setup_tray_icon(self):
         self.tray_icon = QSystemTrayIcon(self)
@@ -313,16 +320,16 @@ class Overlay(QWidget):
         pixmap = QPixmap(16, 16)
         pixmap.fill(self.line_color)
         self.tray_icon.setIcon(QIcon(pixmap))
-        self.tray_icon.setToolTip("Window枠拡張ツール")
+        self.tray_icon.setToolTip("WindowBorderTool")
 
         tray_menu = QMenu()
-        settings_action = tray_menu.addAction("設定...")
+        settings_action = tray_menu.addAction("設定 (Config)...")
         settings_action.triggered.connect(self.show_settings)
 
         tray_menu.addSeparator()
 
-        exit_action = tray_menu.addAction("終了")
-        exit_action.triggered.connect(QApplication.quit)
+        exit_action = tray_menu.addAction("終了 (Quit)")
+        exit_action.triggered.connect(self.exit_application)
 
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
@@ -333,6 +340,33 @@ class Overlay(QWidget):
             pixmap = QPixmap(16, 16)
             pixmap.fill(self.line_color)
             self.tray_icon.setIcon(QIcon(pixmap))
+
+    def exit_application(self):
+        self.close()
+        QApplication.quit()
+
+    def closeEvent(self, event):
+        # 1. Timer停止
+        if hasattr(self, 'timer') and self.timer.isActive():
+            self.timer.stop()
+
+        # 2. 全 WindowOverlay を close() ＆ deleteLater()
+        for hwnd in list(self.overlays.keys()):
+            try:
+                self.overlays[hwnd].close()
+                self.overlays[hwnd].deleteLater()
+            except Exception as e:
+                debug_log(f"Error closing overlay {hwnd}: {e}")
+
+        # 3. overlays辞書をclear()
+        self.overlays.clear()
+
+        # 4. TrayIcon.hide()
+        if hasattr(self, 'tray_icon'):
+            self.tray_icon.hide()
+
+        # 5. event.accept()
+        event.accept()
 
     def update_all_overlays_style(self):
         self.line_alpha = int(self.line_alpha_pct * 2.55)
@@ -368,6 +402,10 @@ class Overlay(QWidget):
 
 
 if __name__ == "__main__":
+    print("WindowBorderTool start")
+    if DEBUG:
+        print("例外発生したらここにログが表示されます。")
+        print("If an exception occurs, the log will be displayed here.")
     app = QApplication(sys.argv)
     overlay = Overlay()
     overlay.show()

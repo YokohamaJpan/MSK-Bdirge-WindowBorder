@@ -1,4 +1,4 @@
-# Window Border Tool (WindowBorderTool)
+# Window Border Tool (WindowBorderTool) - v1.0
 
 [日本語版説明書 (Japanese)](README_JA.md)
 
@@ -50,6 +50,15 @@ The developer himself has long struggled with the difficulty of distinguishing w
 ## ❌ How to Exit
 - Right-click the square icon in the system tray and select **"終了" (Exit)**.
 - Alternatively, close the black console window (command prompt) by clicking the **"X" close button** at the top-right of that window.
+
+---
+
+## 🛠️ Debug Mode
+If you experience any issues or wish to view detailed exception logs for troubleshooting:
+1. Open **`WindowBorderTool.bat`** with a text editor.
+2. Change `set DEBUG_MODE=0` to `set DEBUG_MODE=1` and save the file.
+3. Upon running the tool, the console window will display detailed log messages (such as exception errors).
+   - *Note: You can also temporarily launch in debug mode by passing a command-line argument (e.g., run `WindowBorderTool.bat debug` in cmd/PowerShell).*
 
 ---
 
